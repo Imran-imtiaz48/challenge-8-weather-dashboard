@@ -1,212 +1,137 @@
-var APIkey = "9a1ef4b357aa8b1ab5a4fce1c51a6966";
-var searchInput = "";
-var todayCard = $('#today');
-var fiveDayForecast = $('#forecast');
-var searchHistory = [];
+const APIkey = "9a1ef4b357aa8b1ab5a4fce1c51a6966";
+let searchInput = "";
+const todayCard = $('#today');
+const fiveDayForecast = $('#forecast');
+let searchHistory = [];
 
-
-// ON SEARCH CLICK DISPLAY RESULTS
+// Search button event
 $('#search-button').on('click', function (event) {
-
-    //prevent default action
     event.preventDefault();
+    searchInput = $('#search-input').val().trim();
 
-    // grab input val & get weather data
-    searchInput = $('#search-input').val();
-    getWeather();
+    if (!searchInput) return; // prevent empty input
 
-    // add to buttons to allow users to search for that city again
-    addToButtons();
-
+    getWeather(searchInput);
+    addToButtons(searchInput);
 });
 
-
-// MAIN WEATHER FUNCTION - GET LON/LAT & GENERATE WEATHER
-function getWeather() {
-
-    // clear previous searches on screen otherwise it repeats
+// Get weather data by city
+function getWeather(city) {
     todayCard.empty();
     $('#forecast-title').empty();
     fiveDayForecast.empty();
 
-    // get search value & set URL for geocoding API
-    var geoQueryURL = "https://api.openweathermap.org/geo/1.0/direct?q=" + searchInput + "&limit=5&appid=" + APIkey;
+    const geoURL = `https://api.openweathermap.org/geo/1.0/direct?q=${city}&limit=1&appid=${APIkey}`;
 
-    // GET LATITUDE & LONGITUDE FOR CITY
-    $.ajax({
-        url: geoQueryURL,
-        method: "GET"
-    }).then(function (response) {
+    $.ajax({ url: geoURL, method: "GET" }).then(function (geoRes) {
+        if (!geoRes.length) {
+            alert("City not found.");
+            return;
+        }
 
-        // get lon/lat, reduce to 2 decimals and update openweathermap API url
-        var lon = response[0].lon.toFixed(2);
-        var lat = response[0].lat.toFixed(2);
-        var queryURL = "https://api.openweathermap.org/data/2.5/forecast?lat=" + lat + "&lon=" + lon + "&cnt=40&appid=" + APIkey;
+        const { lat, lon } = geoRes[0];
+        const queryURL = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}&cnt=40&appid=${APIkey}`;
 
-        // GET WEATHER FOR CURRENT DAY
-        $.ajax({
-            url: queryURL,
-            method: "GET"
-        }).then(function (response) {
+        $.ajax({ url: queryURL, method: "GET" }).then(function (response) {
+            displayTodayWeather(response);
+            displayFiveDayForecast(response);
+        }).catch(() => alert("Error fetching weather data."));
+    }).catch(() => alert("Error fetching location data."));
+}
 
-            var todayDiv = $('<div>').attr('class', "card today-card p-4");;
+// Display today's weather
+function displayTodayWeather(response) {
+    const todayDiv = $('<div>').addClass("card today-card p-4");
 
-            // city name and date (using moment to remove time stamp)
-            var cityNameAndDate = $('<h2>').text(
-                response.city.name + " (" +
-                moment(response.list[0].dt_txt).format('DD/MM/YY') + ")"
-            );
+    const cityNameAndDate = $('<h2>').text(
+        `${response.city.name} (${moment(response.list[0].dt_txt).format('DD/MM/YY')})`
+    );
 
-            // icon
-            var iconCode = response.list[0].weather[0].icon;
-            var todayIcon = $('<img>').attr({
-                src: "https://openweathermap.org/img/w/" + iconCode + ".png",
-                height: "50px",
-                width: "50px"
-            });
+    const iconCode = response.list[0].weather[0].icon;
+    const todayIcon = $('<img>').attr({
+        src: `https://openweathermap.org/img/w/${iconCode}.png`,
+        height: "50px",
+        width: "50px"
+    });
 
-            // temp in C (kelvin -273.15 = C)
-            var todaysTemp = $('<p>').text("Temp: " + (response.list[0].main.temp_max - 273.15).toFixed(2) + " °C");
+    const temp = (response.list[0].main.temp_max - 273.15).toFixed(2);
+    const wind = response.list[0].wind.speed;
+    const humidity = response.list[0].main.humidity;
 
-            // wind speed in KPH
-            var todayWind = $('<p>').text("Wind: " + response.list[0].wind.speed + " KPH");
+    const tempP = $('<p>').text(`Temp: ${temp} °C`);
+    const windP = $('<p>').text(`Wind: ${wind} KPH`);
+    const humidityP = $('<p>').text(`Humidity: ${humidity}%`);
 
-            // humidity percentage
-            var todayHumidity = $('<p>').text("Humidity: " + response.list[0].main.humidity + "%");
+    todayCard.append(todayDiv);
+    todayDiv.append(cityNameAndDate, todayIcon, tempP, windP, humidityP);
+}
 
-            // append all items
-            todayCard.append(todayDiv);
-            todayDiv.append(cityNameAndDate, todayIcon, todaysTemp, todayWind, todayHumidity);
+// Display 5-day forecast
+function displayFiveDayForecast(response) {
+    const forecastTitle = $('<h4>').text("5-Day Forecast:");
+    $('#forecast-title').append(forecastTitle);
 
+    for (let i = 7; i < response.list.length; i += 8) {
+        const forecast = response.list[i];
+        const forecastDiv = $('<div>').addClass("card forecast-card m-3");
+        const forecastCard = $('<div>').addClass("card-body");
 
-            // GET FIVE DAY FORECAST
-            $.ajax({
-                url: queryURL,
-                method: "GET"
-            }).then(function (response) {
+        const date = $('<h5>').addClass("card-title").text(
+            moment(forecast.dt_txt).format('DD/MM/YY')
+        );
 
-                // get forecast for next 5 days
-                var forecastTitle = $('<h4>').text("5-Day forecast: ");
-                $('#forecast-title').append(forecastTitle);
-
-                // each day is 8 x 3 hr
-                for (i = 8; i < response.list.length; i++) {
-
-                    var forecastDiv = $('<div>').attr('class', "card forecast-card m-3");
-                    var forecastCard = $('<div>').attr('class', "card-body");
-
-                    //date
-                    var date = $('<h5>').text(moment(response.list[i].dt_txt).format('DD/MM/YY'));
-                    date.attr('class', 'card-title');
-
-                    // icon
-                    var iconCode = response.list[i].weather[0].icon;
-                    var forecastIcon = $('<img>').attr({
-                        src: "https://openweathermap.org/img/w/" + iconCode + ".png",
-                        height: "50px",
-                        width: "50px"
-                    });
-
-                    // temp
-                    var temp = $('<p>').text("Temp: " + (response.list[i].main.temp_max - 273.15).toFixed(2) + " °C");
-
-                    // wind speed
-                    var windSpeed = $('<p>').text("Wind: " + response.list[i].wind.speed + " KPH");
-
-                    // humidity
-                    var humidity = $('<p>').text("Humidity: " + response.list[i].main.humidity + "%");
-
-                    fiveDayForecast.append(forecastDiv);
-                    forecastDiv.append(forecastCard);
-                    forecastCard.append(date, forecastIcon, temp, windSpeed, humidity);
-
-                    // add 7 to get to the next day (instead of 8 as the loop already adds 1)
-                    i = i + 6; // changed to 6 as wasn't picking up 5th day - not sure why
-                }
-
-            })
+        const icon = $('<img>').attr({
+            src: `https://openweathermap.org/img/w/${forecast.weather[0].icon}.png`,
+            height: "50px",
+            width: "50px"
         });
-    });
-};
 
+        const temp = $('<p>').text(`Temp: ${(forecast.main.temp_max - 273.15).toFixed(2)} °C`);
+        const wind = $('<p>').text(`Wind: ${forecast.wind.speed} KPH`);
+        const humidity = $('<p>').text(`Humidity: ${forecast.main.humidity}%`);
 
-// GENERATE SEARCH HISTORY BUTTONS
-function addToButtons() {
+        forecastCard.append(date, icon, temp, wind, humidity);
+        forecastDiv.append(forecastCard);
+        fiveDayForecast.append(forecastDiv);
+    }
+}
 
-    // get search input
-    var input = $('#search-input').val();
+// Add button to search history
+function addToButtons(city) {
+    if (!city || searchHistory.includes(city)) return;
 
-    // create button with search input as text content
-    var button = $('<button>').text(input);
-    button.attr({
-        class: 'search-history mb-3',
-        "data-name": input
-    });
-
-    // add button to history div below search bar
+    const button = $('<button>').text(city).addClass('search-history mb-3').attr("data-name", city);
     $('#history').append(button);
 
-    // add to local storage and search terms array
-    searchHistory.push(input);
+    searchHistory.push(city);
     localStorage.setItem("search-term", JSON.stringify(searchHistory));
+}
 
-};
-
-
-// on click of previous city button, get weather
-$(document).on("click", ".search-history", function (event) {
-
-    // search input is the name within data-name
-    searchInput = $(this).attr("data-name");
-
-    // run getweather function to display weather
-    getWeather();
-
+// On click of history button
+$(document).on("click", ".search-history", function () {
+    const city = $(this).attr("data-name");
+    getWeather(city);
 });
 
-
-
-// render buttons from local storage
+// Render history buttons on page load
 function renderButtons() {
+    const storedHistory = JSON.parse(localStorage.getItem("search-term"));
 
-    // get local storage
-    storageSearchHistory = JSON.parse(localStorage.getItem("search-term"));
+    if (!storedHistory) return;
 
-    // if local storage is blank, do not add buttons
-    if (storageSearchHistory === null) {
-        searchHistory = [];
+    searchHistory = storedHistory;
+    searchHistory.forEach(city => {
+        const button = $('<button>').text(city).addClass('search-history mb-3').attr("data-name", city);
+        $('#history').append(button);
+    });
+}
 
-    } else {
-        searchHistory = storageSearchHistory;
-
-        // for each storage item, create button
-        for (i = 0; i < searchHistory.length; i++) {
-
-            var button = $('<button>').text(searchHistory[i]);
-
-            button.attr({
-                class: 'search-history mb-3',
-                "data-name": searchHistory[i]
-            });
-
-            $('#history').append(button);
-        }
-    }
-};
-
-// render buttons on page load
-renderButtons();
-
-// clear local storage on click
-$('#clear-history').on("click", function (event) {
-
-    // empty local storage array
+// Clear history
+$('#clear-history').on("click", function () {
     searchHistory = [];
-
-    // empty local storage
     localStorage.removeItem("search-term");
-
-    // remove all buttons previously rendered
     $('#history').empty();
-
 });
+
+// Initialize
+renderButtons();
